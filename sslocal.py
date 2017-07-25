@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import argparse
 import json
 import logging
 import select
@@ -15,14 +16,23 @@ SOCKS_AUTHENTICATION = 0    # no Authentication
 SOCKS_MODE = 1    # mode: connection
 
 class Socks5Server(StreamRequestHandler):
-    def encrypt(self, key, data):    # encrypt data
-        pass
+    def encrypt(self, data):    # encrypt data
+        return aes_256_cfb.encrypt(data)
 
-    def decrypt(self, Key, data):    # decrypt data
-        pass
+    def decrypt(self, data):    # decrypt data
+        return aes_256_cfb.decrypt(data)
 
     def tcp_relay(self, sock, remote):    # relay data
-        pass
+        try:
+            while True:
+                r, w, e = select.select([sock, remote], [], [])
+                if sock in r:
+                    if remote.send(self.encrypt(sock.recv(4080))) <= 0:
+                        break
+
+                if remote in r:
+                    if sock.send(self.decrypt(remote.recv(4096))) <= 0:
+                        break
 
     def handle(self):
         sock = self.connection
@@ -52,7 +62,7 @@ class Socks5Server(StreamRequestHandler):
         data_to_send = addr_type
 
         if addr_type == 1:
-            addr_ip = self.rfile.read(4)
+            addr_ip = self.rfile.read(4)    # addr ip (4 bytes)
             #addr = socket.inet_ntoa(addr_ip)    # deprecated
             data_to_send += addr_ip
 
@@ -74,4 +84,29 @@ class Socks5Server(StreamRequestHandler):
 
         remote = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         remote.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-        remote.connect((SERVER, SERVER_PORT))
+        remote.connect((SERVER, SERVER_PORT))    # connect to shadowsocks server
+        remote.send(self.encrypt(data_to_send))
+        self.tcp_relay(sock, remote)
+
+
+def main():
+    parser = argparse.ArgumentParser(description='shadowsocks local')
+    parser.add_argument('-c', '--config', help='config file')
+    args = parser.parse_args()
+    if args.config:
+        with open(args.config, 'r') as f:
+            config = json.load(f)
+
+    SERVER = config['server']
+    SERVER_PORT = config['server_port']
+    PORT = config['local_port']
+    KEY = config['password']
+
+    aes_256_cfb = aes_cfb(KEY)
+
+    with ThreadingTCPServer(('127.0.0.2', 1088), Socks5Server) as server:
+        server.serve_forever()
+
+
+if __name__ == '__main__':
+    main()
