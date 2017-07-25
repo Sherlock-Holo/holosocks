@@ -3,6 +3,7 @@ from Crypto.Hash import SHA256
 from Crypto import Random
 import base64
 
+
 class aes_cfb:
     def __init__(self, key):
         self.key = SHA256.new(key.encode()).digest()
@@ -21,10 +22,10 @@ class aes_cfb:
         #data = self.pkcs7_encode(data)
         iv = Random.new().read(AES.block_size)
         cipher = AES.new(self.key, AES.MODE_CFB, iv)
-        return base64.b64encode(iv + cipher.encrypt(data))
+        return iv + cipher.encrypt(data)
 
     def decrypt(self, data):
-        data = base64.b64decode(data)
+        #data = base64.b64decode(data)
         iv = data[:16]
         data = data[16:]
         cipher = AES.new(self.key, AES.MODE_CFB, iv)
@@ -33,7 +34,9 @@ class aes_cfb:
 
 if __name__ == '__main__':
     aes_256_cfb = aes_cfb('test')
-    cipher = aes_256_cfb.encrypt(b'holo')
+    cipher = aes_256_cfb.encrypt(b'sherlock holo')
+    print('cipher len:', len(cipher[16:]))
     print('cipher:', cipher)
     plain_text = aes_256_cfb.decrypt(cipher)
+    print('plain text len:', len(plain_text))
     print('plain text:', plain_text)
