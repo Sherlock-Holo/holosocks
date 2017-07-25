@@ -33,7 +33,7 @@ class aes_cfb:
 
 if __name__ == '__main__':
     aes_256_cfb = aes_cfb('test')
-    cipher = aes_256_cfb.encrypt('holo')
+    cipher = aes_256_cfb.encrypt(b'holo')
     print('cipher:', cipher)
     plain_text = aes_256_cfb.decrypt(cipher)
     print('plain text:', plain_text)
