@@ -46,7 +46,7 @@ class Socks5Server(StreamRequestHandler):
 
             if client_ask[0] == SOCSK_VERSION:    # check client socks version
                 if client_ask[-1] == SOCKS_AUTHENTICATION:    # check client auth
-                    self.wfile.write('\x05\x00')
+                    self.wfile.write(b'\x05\x00')
 
                 else:
                     logging.warn('socks Authentication error')
