@@ -15,19 +15,20 @@ SOCSK_VERSION = 5    # use socks5
 SOCKS_AUTHENTICATION = 0    # no Authentication
 SOCKS_MODE = 1    # mode: connection
 
+
 class Socks5Server(StreamRequestHandler):
     def encrypt(self, data):    # encrypt data
-        return aes_256_cfb.encrypt(data)
+        return self.aes_256_cfb.encrypt(data)
 
     def decrypt(self, data):    # decrypt data
-        return aes_256_cfb.decrypt(data)
+        return self.aes_256_cfb.decrypt(data)
 
     def tcp_relay(self, sock, remote):    # relay data
         try:
             while True:
                 r, w, e = select.select([sock, remote], [], [])
                 if sock in r:
-                    if remote.send(self.encrypt(sock.recv(4080))) <= 0:
+                    if remote.send(self.encrypt(sock.recv(4096))) <= 0:
                         break
 
                 if remote in r:
@@ -39,10 +40,13 @@ class Socks5Server(StreamRequestHandler):
             remote.close()
 
     def handle(self):
+        self.aes_256_cfb = aes_cfb(KEY)
+
         try:
             sock = self.connection
             client_ask = self.rfile.read(3)
-            logging.info('socks5 ask from: {}:{}'.format(self.client_address[0], self.client_address[1]))
+            logging.info('socks5 ask from: {}:{}'.format(
+                self.client_address[0], self.client_address[1]))
 
             if client_ask[0] == SOCSK_VERSION:    # check client socks version
                 if client_ask[-1] == SOCKS_AUTHENTICATION:    # check client auth
@@ -57,18 +61,18 @@ class Socks5Server(StreamRequestHandler):
 
             data = self.rfile.read(4)    # request format: VER CMD RSV ATYP (4 bytes)
 
-            if not data[1] == SOCKS_MODE :   # only support CMD mode: connect
+            if not data[1] == SOCKS_MODE:   # only support CMD mode: connect
                 data = b'\x05\x07\x00\x01' + socket.inet_aton('0.0.0.0') + struct.pack('>H', 0)
                 self.wfile.write(data)
                 logging.warn('not support CMD mode')
                 return None
 
-            addr_type == data[3]
-            data_to_send = addr_type
+            addr_type = data[3]
+            data_to_send = struct.pack('>B', addr_type)
 
             if addr_type == 1:
                 addr_ip = self.rfile.read(4)    # addr ip (4 bytes)
-                #addr = socket.inet_ntoa(addr_ip)    # deprecated
+                # addr = socket.inet_ntoa(addr_ip)    # deprecated
                 data_to_send += addr_ip
 
             elif addr_type == 3:
@@ -83,7 +87,7 @@ class Socks5Server(StreamRequestHandler):
             addr_port = self.rfile.read(2)
             data_to_send += addr_port
 
-            reply = '\x05\x00\x00\x01'    # VER REP RSV ATYP
+            reply = b'\x05\x00\x00\x01'    # VER REP RSV ATYP
             reply += socket.inet_aton('0.0.0.0') + struct.pack('>H', 3389)    # bind info
             self.wfile.write(reply)    # resonse packet
 
@@ -96,8 +100,12 @@ class Socks5Server(StreamRequestHandler):
         except socket.error as e:
             logging.warn(e)
 
+        finally:
+            sock.close()
+            remote.close()
 
-def main():
+
+if __name__ == '__main__':
     logging.basicConfig(level=logging.DEBUG,
                         format='{asctime} {levelname} {message}',
                         datefmt='%Y-%m-%d %H:%M:%S',
@@ -115,11 +123,11 @@ def main():
     PORT = config['local_port']
     KEY = config['password']
 
-    aes_256_cfb = aes_cfb(KEY)
+    #aes_256_cfb = aes_cfb(KEY)
 
     with ThreadingTCPServer(('127.0.0.2', PORT), Socks5Server) as server:
-        server.serve_forever()
+        try:
+            server.serve_forever()
 
-
-if __name__ == '__main__':
-    main()
+        finally:
+            server.server_close()

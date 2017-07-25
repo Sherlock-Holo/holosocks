@@ -18,10 +18,10 @@ SOCKS_MODE = 1    # mode: connection
 
 class Socks5Server(StreamRequestHandler):
     def encrypt(self, data):    # encrypt data
-        return aes_256_cfb.encrypt(data)
+        return self.aes_256_cfb.encrypt(data)
 
     def decrypt(self, data):    # decrypt data
-        return aes_256_cfb.decrypt(data)
+        return self.aes_256_cfb.decrypt(data)
 
     def tcp_relay(self, sock, remote):    # relay data
         try:
@@ -32,7 +32,7 @@ class Socks5Server(StreamRequestHandler):
                         break
 
                 if remote in r:
-                    if sock.send(self.encrypt(remote.recv(4080))) <= 0:
+                    if sock.send(self.encrypt(remote.recv(4096))) <= 0:
                         break
 
         finally:
@@ -40,6 +40,8 @@ class Socks5Server(StreamRequestHandler):
             remote.close()
 
     def handle(self):
+        self.aes_256_cfb = aes_cfb(KEY)
+
         try:
             sock = self.connection
 
@@ -64,7 +66,7 @@ class Socks5Server(StreamRequestHandler):
             logging.warn(e)
 
 
-def main():
+if __name__ == '__main__':
     logging.basicConfig(level=logging.DEBUG,
                         format='{asctime} {levelname} {message}',
                         datefmt='%Y-%m-%d %H:%M:%S',
@@ -85,8 +87,8 @@ def main():
     aes_256_cfb = aes_cfb(KEY)
 
     with ThreadingTCPServer((SERVER, SERVER_PORT), Socks5Server) as server:
-        server.serve_forever()
+        try:
+            server.serve_forever()
 
-
-if __name__ == '__main__':
-    main()
+        finally:
+            server.server_close()
