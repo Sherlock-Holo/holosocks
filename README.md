@@ -1,0 +1,2 @@
+# shadowsocks
+a simple shadowsocks
