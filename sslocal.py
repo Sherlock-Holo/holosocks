@@ -40,8 +40,6 @@ class Socks5Server(StreamRequestHandler):
             remote.close()
 
     def handle(self):
-        self.aes_256_cfb = aes_cfb(KEY)
-
         try:
             sock = self.connection
             client_ask = self.rfile.read(3)
@@ -68,6 +66,7 @@ class Socks5Server(StreamRequestHandler):
                 return None
 
             addr_type = data[3]
+            logging.info('addr type: {}'.format(addr_type))
             data_to_send = struct.pack('>B', addr_type)
 
             if addr_type == 1:
@@ -77,6 +76,7 @@ class Socks5Server(StreamRequestHandler):
 
             elif addr_type == 3:
                 addr_len = self.rfile.read(1)
+                data_to_send += addr_len
                 addr = self.rfile.read(ord(addr_len))
                 data_to_send += addr
 
@@ -91,18 +91,18 @@ class Socks5Server(StreamRequestHandler):
             reply += socket.inet_aton('0.0.0.0') + struct.pack('>H', 3389)    # bind info
             self.wfile.write(reply)    # resonse packet
 
+            self.aes_256_cfb = aes_cfb(KEY)    # instantiate encrypt class
+            self.aes_256_cfb.new()
+
             remote = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             remote.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
             remote.connect((SERVER, SERVER_PORT))    # connect to shadowsocks server
+            remote.send(self.aes_256_cfb.iv)    # send iv
             remote.send(self.encrypt(data_to_send))
             self.tcp_relay(sock, remote)
 
         except socket.error as e:
             logging.warn(e)
-
-        finally:
-            sock.close()
-            remote.close()
 
 
 if __name__ == '__main__':
@@ -129,5 +129,5 @@ if __name__ == '__main__':
         try:
             server.serve_forever()
 
-        finally:
+        except KeyboardInterrupt:
             server.server_close()

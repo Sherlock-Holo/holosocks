@@ -45,17 +45,24 @@ class Socks5Server(StreamRequestHandler):
         try:
             sock = self.connection
 
+            iv = self.rfile.read(16)
+            self.aes_256_cfb.new(iv)
+
             addr_type = self.decrypt(self.rfile.read(1))
-            if addr_type == 1:
+            if addr_type == b'\x01':
                 addr_ip = self.decrypt(self.rfile.read(4))    # addr ip (4 bytes)
                 addr = socket.inet_ntoa(addr_ip)    # get target addr
 
-            elif addr_type == 3:
+            elif addr_type == b'\x03':
                 addr_len = self.decrypt(self.rfile.read(1))    # addr len (1 byte)
+                logging.info(addr_len)
                 addr = self.decrypt(self.rfile.read(ord(addr_len)))  # domain name
 
+            logging.info(addr)
+
             _port = self.decrypt(self.rfile.read(2))    # get port (2 bytes)
-            port = struct.unpack('>H', _port)
+            port = struct.unpack('>H', _port)[0]
+            logging.info(port)
 
             remote = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             remote.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
@@ -90,5 +97,5 @@ if __name__ == '__main__':
         try:
             server.serve_forever()
 
-        finally:
+        except KeyboardInterrupt:
             server.server_close()
