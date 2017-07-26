@@ -95,10 +95,10 @@ class Socks5Server(StreamRequestHandler):
             remote = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             remote.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
             remote.connect((SERVER, SERVER_PORT))    # connect to shadowsocks server
-            logging.info('connect to {}:{}'.format(remote.getpeername()[0], remote.getpeername()[1]))
+            logging.info('shadowsocks server {}:{}'.format(remote.getpeername()[0], remote.getpeername()[1]))
             remote.send(self.aes_256_cfb.iv)    # send iv
             remote.send(self.encrypt(data_to_send))
-            self.tcp_relay(sock, remote)
+            self.tcp_relay(sock, remote)    # start relay
 
         except socket.error as e:
             logging.warn(e)
