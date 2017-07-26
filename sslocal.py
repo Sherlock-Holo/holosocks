@@ -24,8 +24,10 @@ class Socks5Server(StreamRequestHandler):
         return self.aes_256_cfb.decrypt(data)
 
     def tcp_relay(self, sock, remote):    # relay data
+        fdset = [sock, remote]
+        logging.info('start relay')
         while True:
-            r, w, e = select.select([sock, remote], [], [])
+            r, w, e = select.select(fdset, [], [])
             logging.info(r)
             if sock in r:
                 if remote.send(self.encrypt(sock.recv(4096))) <= 0:
@@ -93,6 +95,7 @@ class Socks5Server(StreamRequestHandler):
             remote = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             remote.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
             remote.connect((SERVER, SERVER_PORT))    # connect to shadowsocks server
+            logging.info('connect to {}:{}'.format(remote.getpeername()[0], remote.getpeername()[1]))
             remote.send(self.aes_256_cfb.iv)    # send iv
             remote.send(self.encrypt(data_to_send))
             self.tcp_relay(sock, remote)
@@ -119,11 +122,6 @@ if __name__ == '__main__':
     PORT = config['local_port']
     KEY = config['password']
 
-    #aes_256_cfb = aes_cfb(KEY)
-
     with ThreadingTCPServer(('127.0.0.2', PORT), Socks5Server) as server:
-        try:
-            server.serve_forever()
-
-        except KeyboardInterrupt:
-            server.server_close()
+        server.allow_reuse_address = True
+        server.serve_forever()
