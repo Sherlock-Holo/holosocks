@@ -7,18 +7,22 @@ import base64
 class aes_cfb:
     def __init__(self, key):
         self.key = SHA256.new(key.encode()).digest()
-        self.iv = Random.new().read(AES.block_size)
+
+    def new(self, iv=None):
+        if not iv:
+            self.iv = Random.new().read(AES.block_size)
+
+        else:
+            if len(iv) != 16:
+                raise ValueError('iv length should be 16 but given value length {}'.format(len(iv)))
+
+            elif type(iv) != str:
+                raise TypeError('iv should be str not {}'.format(type(iv)))
+                
+            else:
+                self.iv = iv.encode()
+
         self.cipher = AES.new(self.key, AES.MODE_CFB, self.iv)
-
-    def pkcs7_encode(self, data):
-        block_size = 16
-        padd_len = block_size - len(data) % block_size
-        data += ''.join((chr(i) for i in range(1, padd_len + 1)))
-        return data
-
-    def pkcs7_decode(self, data):
-        padd_len = data[-1]
-        return data[:-padd_len]
 
     def encrypt(self, data):
         return self.iv + self.cipher.encrypt(data)
@@ -31,6 +35,7 @@ class aes_cfb:
 
 if __name__ == '__main__':
     aes_256_cfb = aes_cfb('test')
+    aes_256_cfb.new('1234567890123456')
     cipher = aes_256_cfb.encrypt(b'sherlock holo')
     print('cipher len:', len(cipher[16:]))
     print('cipher:', cipher)
