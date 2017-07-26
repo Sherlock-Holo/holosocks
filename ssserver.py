@@ -24,20 +24,16 @@ class Socks5Server(StreamRequestHandler):
         return self.aes_256_cfb.decrypt(data)
 
     def tcp_relay(self, sock, remote):    # relay data
-        try:
-            while True:
-                r, w, e = select.select([sock, remote], [], [])
-                if sock in r:
-                    if remote.send(self.decrypt(sock.recv(4096))) <= 0:
-                        break
+        while True:
+            r, w, e = select.select([sock, remote], [], [])
+            logging.info(r)
+            if sock in r:
+                if remote.send(self.decrypt(sock.recv(4096))) <= 0:
+                    break
 
-                if remote in r:
-                    if sock.send(self.encrypt(remote.recv(4096))) <= 0:
-                        break
-
-        finally:
-            sock.close()
-            remote.close()
+            if remote in r:
+                if sock.send(self.encrypt(remote.recv(4096))) <= 0:
+                    break
 
     def handle(self):
         self.aes_256_cfb = aes_cfb(KEY)
