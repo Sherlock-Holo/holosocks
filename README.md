@@ -5,5 +5,5 @@ a simple Shadowsocks
 
 ## In China we call it "情怀"🌚
 
-## Requies
+## Requires
 * python-pycryptodomex (instead of pycrypto)
