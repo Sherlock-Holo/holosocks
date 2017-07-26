@@ -1,6 +1,6 @@
-from Crypto.Cipher import AES
-from Crypto.Hash import SHA256
-from Crypto import Random
+from Cryptodome.Cipher import AES
+from Cryptodome.Hash import SHA256
+from Cryptodome.Random import get_random_bytes
 
 
 class aes_cfb:
@@ -9,11 +9,12 @@ class aes_cfb:
 
     def new(self, iv=None):
         if not iv:
-            self.iv = Random.new().read(AES.block_size)
+            self.iv = get_random_bytes(AES.block_size)
 
         else:
             if len(iv) != 16:
-                raise ValueError('iv length should be 16 but given value length {}'.format(len(iv)))
+                error_msg = 'iv length should be 16 but given value length {}'
+                raise ValueError(error_msg.format(len(iv)))
 
             elif type(iv) != bytes:
                 raise TypeError('iv should be bytes')
@@ -28,3 +29,14 @@ class aes_cfb:
 
     def decrypt(self, data):
         return self.cipher.decrypt(data)
+
+
+if __name__ == '__main__':
+    plain = b'holo'
+    en = aes_cfb('test')
+    en.new()
+    cipher = en.encrypt(plain)
+    iv = en.iv
+    de = aes_cfb('test')
+    de.new(iv)
+    print(de.decrypt(cipher))
