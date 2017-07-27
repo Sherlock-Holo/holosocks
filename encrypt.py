@@ -3,6 +3,10 @@ from Cryptodome.Hash import SHA256
 from Cryptodome.Random import get_random_bytes
 
 
+Cipher_Tag = {'aes-256-gcm': 16}
+Nonce_Len = 8    # fuck you 12 bytes
+
+
 class aes_cfb:
     def __init__(self, key):
         self.key = SHA256.new(key.encode()).digest()
@@ -29,6 +33,31 @@ class aes_cfb:
 
     def decrypt(self, data):
         return self.cipher.decrypt(data)
+
+
+class aes_gcm:
+    def __init__(self, key):
+        self.raw_key = key
+
+    def new(self, salt=None, nonce=None):
+        if not salt:
+            self.salt = get_random_bytes(16)
+        else:
+            self.salt = salt
+        self.key = SHA256.new(self.raw_key + self.salt)
+
+        if not nonce:
+            self.nonce = get_random_bytes(Nonce_Len)
+        else:
+            self.nonce = nonce
+        self.cipher = AES.new(self.key, AES.MODE_GCM, self.nonce)
+
+    def encrypt(self, data):
+        return self.cipher.encrypt(data), self.cipher.digest()
+
+    def decrypt(self, data, mac):
+        plain = self.cipher.decrypt_and_verify(data, mac)
+        return plain
 
 
 if __name__ == '__main__':
