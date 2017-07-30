@@ -85,10 +85,10 @@ class aes_gcm:
 
 if __name__ == '__main__':
     plain = b'holo'
-    en = aes_gcm('test')
+    en = aes_cfb('test')
     en.new()
-    salt, nonce = en.salt, en.nonce
+    iv = en.iv
     cipher = en.encrypt(plain)
-    de = aes_gcm('test')
-    de.new(salt, nonce)
-    print(de.decrypt(*cipher))
+    de = aes_cfb('test')
+    de.new(iv)
+    print(de.decrypt(cipher[:-2]))
