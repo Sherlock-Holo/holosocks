@@ -18,10 +18,10 @@ SOCKS_MODE = 1    # mode: connection
 
 class Socks5Server(StreamRequestHandler):
     def encrypt(self, data):    # encrypt data
-        return self.aes_256_cfb.encrypt(data)
+        return self._encrypt.encrypt(data)
 
     def decrypt(self, data):    # decrypt data
-        return self.aes_256_cfb.decrypt(data)
+        return self._decrypt.decrypt(data)
 
     def tcp_relay(self, sock, remote):    # relay data
         fdset = [sock, remote]
@@ -38,13 +38,15 @@ class Socks5Server(StreamRequestHandler):
                     break
 
     def handle(self):
-        self.aes_256_cfb = aes_cfb(KEY)
+        self._encrypt = aes_cfb(KEY)
+        self._decrypt = aes_cfb(KEY)
 
         try:
             sock = self.connection
 
             iv = self.rfile.read(16)
-            self.aes_256_cfb.new(iv)
+            self._encrypt.new(iv)
+            self._decrypt.new(iv)
 
             addr_type = self.decrypt(self.rfile.read(1))
             if addr_type == b'\x01':

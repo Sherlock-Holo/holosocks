@@ -18,10 +18,10 @@ SOCKS_MODE = 1    # mode: connection
 
 class Socks5Server(StreamRequestHandler):
     def encrypt(self, data):    # encrypt data
-        return self.aes_256_cfb.encrypt(data)
+        return self._encrypt.encrypt(data)
 
     def decrypt(self, data):    # decrypt data
-        return self.aes_256_cfb.decrypt(data)
+        return self._decrypt.decrypt(data)
 
     def tcp_relay(self, sock, remote):    # relay data
         fdset = [sock, remote]
@@ -89,14 +89,16 @@ class Socks5Server(StreamRequestHandler):
             reply += socket.inet_aton('0.0.0.0') + struct.pack('>H', 3389)    # bind info
             self.wfile.write(reply)    # resonse packet
 
-            self.aes_256_cfb = aes_cfb(KEY)    # instantiate encrypt class
-            self.aes_256_cfb.new()
+            self._encrypt = aes_cfb(KEY)    # instantiate encrypt class
+            self._encrypt.new()
+            self._decrypt = aes_cfb(KEY)
+            self._decrypt.new(self._encrypt.iv)
 
             remote = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             remote.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
             remote.connect((SERVER, SERVER_PORT))    # connect to shadowsocks server
             logging.info('shadowsocks server {}:{}'.format(remote.getpeername()[0], remote.getpeername()[1]))
-            remote.send(self.aes_256_cfb.iv)    # send iv
+            remote.send(self._encrypt.iv)    # send iv
             remote.send(self.encrypt(data_to_send))
             self.tcp_relay(sock, remote)    # start relay
 
