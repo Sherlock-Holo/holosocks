@@ -1,117 +1,118 @@
 #!/usr/bin/env python3
 
 import argparse
+import gevent
 import json
 import logging
-import select
-import socket
 import struct
-from socketserver import StreamRequestHandler, ThreadingTCPServer
+from gevent import socket
+from gevent.server import StreamServer
 
 from encrypt import aes_cfb
 
+logging.basicConfig(level=logging.DEBUG,
+                    format='{asctime} {levelname} {message}',
+                    datefmt='%Y-%m-%d %H:%M:%S',
+                    style='{')
 
-SOCSK_VERSION = 5    # use socks5
-SOCKS_AUTHENTICATION = 0    # no Authentication
-SOCKS_MODE = 1    # mode: connection
 
-
-class Socks5Server(StreamRequestHandler):
-    def encrypt(self, data):    # encrypt data
-        return self._encrypt.encrypt(data)
-
-    def decrypt(self, data):    # decrypt data
-        return self._decrypt.decrypt(data)
-
-    def tcp_relay(self, sock, remote):    # relay data
-        fdset = [sock, remote]
-        logging.info('start relay')
-        while True:
-            r, w, e = select.select(fdset, [], [])
-            logging.info(r)
-            if sock in r:
-                if remote.send(self.encrypt(sock.recv(4096))) <= 0:
-                    break
-
-            if remote in r:
-                if sock.send(self.decrypt(remote.recv(4096))) <= 0:
-                    break
-
-    def handle(self):
+class Socks5Server(StreamServer):
+    def sock2remote(self, fr, to):
         try:
-            sock = self.connection
-            client_ask = self.rfile.read(3)
-            logging.info('socks5 ask from: {}:{}'.format(
-                self.client_address[0], self.client_address[1]))
+            while True:
+                if to.send(self.en.encrypt(fr.recv(4096))) <= 0:
+                    break
 
-            if client_ask[0] == SOCSK_VERSION:    # check client socks version
-                if client_ask[-1] == SOCKS_AUTHENTICATION:    # check client auth
-                    self.wfile.write(b'\x05\x00')
+        except socket.error:
+            pass
 
-                else:
-                    logging.warn('socks Authentication error')
-                    return None    # SOCKS_AUTHENTICATION error
-            else:
-                logging.warn('socks version error')
-                return None    # SOCSK_VERSION error
+    def remote2sock(self, fr, to):
+        try:
+            while True:
+                if to.send(self.de.decrypt(fr.recv(4096))) <= 0:
+                    break
 
-            data = self.rfile.read(4)    # request format: VER CMD RSV ATYP (4 bytes)
+        except socket.error:
+            pass
 
-            if not data[1] == SOCKS_MODE:   # only support CMD mode: connect
-                data = b'\x05\x07\x00\x01' + socket.inet_aton('0.0.0.0') + struct.pack('>H', 0)
-                self.wfile.write(data)
-                logging.warn('not support CMD mode')
-                return None
+    def handle(self, sock, address):
+        logging.info('socks connection from {}'.format(address))
 
-            addr_type = data[3]
-            logging.info('addr type: {}'.format(addr_type))
-            data_to_send = struct.pack('>B', addr_type)
-
-            if addr_type == 1:
-                addr_ip = self.rfile.read(4)    # addr ip (4 bytes)
-                # addr = socket.inet_ntoa(addr_ip)    # deprecated
-                data_to_send += addr_ip
-
-            elif addr_type == 3:
-                addr_len = self.rfile.read(1)
-                data_to_send += addr_len
-                addr = self.rfile.read(ord(addr_len))
-                data_to_send += addr
+        ask = sock.recv(3)    # connect to socks server
+        logging.info(ask[0])
+        if ask[0] == 5:    # check version
+            if ask[-1] == 0:    # check Authentication info
+                sock.send(b'\x05\x00')
 
             else:
-                logging.warn('addr_type not support')    # addr type not support
+                logging.error('Authentication error')
+                sock.send(struct.pack('>BB', 0x05, 0xff))
+                sock.close()
                 return None
+        else:
+            logging.error('version error')
+            sock.close()
+            return None
 
-            addr_port = self.rfile.read(2)
-            data_to_send += addr_port
+        logging.info('Authentication successed')
 
-            reply = b'\x05\x00\x00\x01'    # VER REP RSV ATYP
-            reply += socket.inet_aton('0.0.0.0') + struct.pack('>H', 3389)    # bind info
-            self.wfile.write(reply)    # resonse packet
+        data = sock.recv(4)    # request format: VER CMD RSV ATYP (4 bytes)
+        if not data[1] == 1:    # CMD not support
+            addr_and_port = socket.inet_aton('0.0.0.0') + struct.pack('>H', 0)
+            sock.send(b'\x05\x07\x00\x01' + addr_and_port)
 
-            self._encrypt = aes_cfb(KEY)    # instantiate encrypt class
-            self._encrypt.new()
-            self._decrypt = aes_cfb(KEY)
-            self._decrypt.new(self._encrypt.iv)
+        addr_type = data[3]    # get atyp (1 byte)
+        logging.info('addr type: {}'.format(addr_type))
+        data_to_send = struct.pack('>B', addr_type)
 
-            remote = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            remote.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-            remote.connect((SERVER, SERVER_PORT))    # connect to shadowsocks server
-            logging.info('shadowsocks server {}:{}'.format(remote.getpeername()[0], remote.getpeername()[1]))
-            remote.send(self._encrypt.iv)    # send iv
-            remote.send(self.encrypt(data_to_send))
-            self.tcp_relay(sock, remote)    # start relay
+        if addr_type == 1:
+            addr = socket.inet_ntoa(sock.recv(4))    # ipv4
 
-        except socket.error as e:
-            logging.warn(e)
+        elif addr_type == 3:
+            addr_len = sock.recv(1)
+            data_to_send += addr_len
+            addr = sock.recv(ord(addr_len))    # domain name
+
+        else:
+            addr_and_port = socket.inet_aton('0.0.0.0') + struct.pack('>H', 0)
+            sock.send(b'\x05\x08\x00\x01' + addr_and_port)
+            sock.close()
+            return None
+
+        data_to_send += addr
+
+        _port = sock.recv(2)    # get target port
+        port = struct.unpack('>H', _port)[0]
+        logging.info('address: {}, port: {}'.format(addr, port))
+
+        data_to_send += _port
+
+        # create encrypt function
+        self.en = aes_cfb(KEY)
+        self.en.new()
+        iv = self.en.iv
+        self.de = aes_cfb(KEY)
+        self.de.new(iv)
+
+        # connect ssserver
+        remote = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        remote.connect((SERVER, SERVER_PORT))
+        logging.info('connected ssserver')
+        remote.send(iv)    # send iv
+        remote.send(self.en.encrypt(data_to_send))
+
+        data = b'\x05\x00\x00\x01'
+        data += socket.inet_aton('0.0.0.0') + struct.pack('>H', 0)
+        sock.send(data)
+
+        # start relay
+        logging.info('start relay')
+        sock2remote = gevent.spawn(self.sock2remote, sock, remote)
+        remote2sock = gevent.spawn(self.remote2sock, remote, sock)
+        gevent.joinall((sock2remote, remote2sock))
 
 
 if __name__ == '__main__':
-    logging.basicConfig(level=logging.DEBUG,
-                        format='{asctime} {levelname} {message}',
-                        datefmt='%Y-%m-%d %H:%M:%S',
-                        style='{')
-
     parser = argparse.ArgumentParser(description='shadowsocks local')
     parser.add_argument('-c', '--config', help='config file')
     args = parser.parse_args()
@@ -124,6 +125,9 @@ if __name__ == '__main__':
     PORT = config['local_port']
     KEY = config['password']
 
-    with ThreadingTCPServer(('127.0.0.2', PORT), Socks5Server) as server:
-        server.allow_reuse_address = True
+    try:
+        server = Socks5Server(('127.0.0.2', PORT))
         server.serve_forever()
+
+    except KeyboardInterrupt:
+        server.close()
