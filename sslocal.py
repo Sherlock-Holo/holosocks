@@ -20,20 +20,26 @@ class Socks5Server(StreamServer):
     def sock2remote(self, fr, to):
         try:
             while True:
-                if to.send(self.en.encrypt(fr.recv(4096))) <= 0:
-                    break
+                data = fr.recv(4096)
+                if len(data) <= 0:
+                    return None
+                #data = self.en.encrypt(data)
+                to.send(data)
 
         except socket.error:
-            pass
+            return None
 
     def remote2sock(self, fr, to):
         try:
             while True:
-                if to.send(self.de.decrypt(fr.recv(4096))) <= 0:
-                    break
+                data = fr.recv(4096)
+                if len(data) <= 0:
+                    return None
+                #data = self.de.decrypt(data)
+                to.send(data)
 
         except socket.error:
-            pass
+            return None
 
     def handle(self, sock, address):
         logging.info('socks connection from {}'.format(address))
@@ -63,23 +69,26 @@ class Socks5Server(StreamServer):
 
         addr_type = data[3]    # get atyp (1 byte)
         logging.info('addr type: {}'.format(addr_type))
-        data_to_send = struct.pack('>B', addr_type)
 
         if addr_type == 1:
-            addr = socket.inet_ntoa(sock.recv(4))    # ipv4
+            data_to_send = struct.pack('>B', addr_type)
+            addr_ip = sock.recv(4)    # ipv4
+            data_to_send += addr_ip
+            addr = socket.inet_ntoa(addr_ip)
 
         elif addr_type == 3:
+            data_to_send = struct.pack('>B', addr_type)
             addr_len = sock.recv(1)
             data_to_send += addr_len
             addr = sock.recv(ord(addr_len))    # domain name
+            data_to_send += addr
 
         else:
             addr_and_port = socket.inet_aton('0.0.0.0') + struct.pack('>H', 0)
             sock.send(b'\x05\x08\x00\x01' + addr_and_port)
             sock.close()
+            logging.error('not support addr type')
             return None
-
-        data_to_send += addr
 
         _port = sock.recv(2)    # get target port
         port = struct.unpack('>H', _port)[0]
@@ -99,7 +108,8 @@ class Socks5Server(StreamServer):
         remote.connect((SERVER, SERVER_PORT))
         logging.info('connected ssserver')
         remote.send(iv)    # send iv
-        remote.send(self.en.encrypt(data_to_send))
+        #data_to_send = self.en.encrypt(data_to_send)
+        remote.send(data_to_send)
 
         data = b'\x05\x00\x00\x01'
         data += socket.inet_aton('0.0.0.0') + struct.pack('>H', 0)
