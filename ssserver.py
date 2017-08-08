@@ -20,26 +20,20 @@ class Socks5Server(StreamServer):
     def sock2remote(self, fr, to):
         try:
             while True:
-                data = fr.recv(4096)
-                if len(data) <= 0:
-                    return None
-                #data = self.de.decrypt(data)
-                to.send(data)
+                if to.send(self.de.decrypt(fr.recv(4096))) <= 0:
+                    break
 
         except socket.error:
-            return None
+            pass
 
     def remote2sock(self, fr, to):
         try:
             while True:
-                data = fr.recv(4096)
-                if len(data) <= 0:
-                    return None
-                #data = self.en.encrypt(data)
-                to.send(data)
+                if to.send(self.en.encrypt(fr.recv(4096))) <= 0:
+                    break
 
         except socket.error:
-            return None
+            pass
 
     def handle(self, sock, address):
         logging.info('socks connection from {}'.format(address))
@@ -50,26 +44,23 @@ class Socks5Server(StreamServer):
         self.de = aes_cfb(KEY)
         self.de.new(iv)
 
-        atyp = sock.recv(1)
-        logging.info('atyp: {}'.format(atyp))
-        addr_type = ord(atyp)
+        addr_type = ord(self.de.decrypt(sock.recv(1)))
         logging.info('addr type: {}'.format(addr_type))
 
         if addr_type == 1:
-            addr_ip = sock.recv(4)
+            addr_ip = self.de.decrypt(sock.recv(4))
             addr = socket.inet_ntoa(addr_ip)
 
         elif addr_type == 3:
-            addr_len = sock.recv(1)
+            addr_len = self.de.decrypt(sock.recv(1))
             logging.info('addr len: {}'.format(ord(addr_len)))
-            addr = sock.recv(ord(addr_len))
+            addr = self.de.decrypt(sock.recv(ord(addr_len)))
 
         else:
             sock.close()
-            logging.error('from {}, not support addr type({})'.format(address, addr_type))
             return None
 
-        port = struct.unpack('>H', sock.recv(2))[0]
+        port = struct.unpack('>H', self.de.decrypt(sock.recv(2)))[0]
 
         logging.info('address: {}, port: {}'.format(addr, port))
 
