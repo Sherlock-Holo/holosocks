@@ -57,6 +57,7 @@ class Socks5Server(StreamServer):
             addr = self.de.decrypt(sock.recv(ord(addr_len)))
 
         else:
+            logging.error('not support addr type')
             sock.close()
             return None
 
