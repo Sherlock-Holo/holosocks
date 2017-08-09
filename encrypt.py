@@ -8,14 +8,12 @@ Nonce_Len = 8    # fuck you 12 bytes
 
 
 class aes_cfb:
-    def __init__(self, key):
-        '''key: Your password like: passw0rd'''
-        self.key = SHA256.new(key.encode()).digest()
+    def __init__(self, key, iv=None):
+        '''Create a new AES-CFB cipher.
+        iv: a 16 bytes length byte string, if not provided a random iv is used
+        key: Your password like: passw0rd'''
 
-    def new(self, iv=None):
-        '''Create a new AES-CFB cipher
-               iv: a 16 bytes length byte string, if not provided a random iv is used
-        '''
+        self.key = SHA256.new(key.encode()).digest()
         if not iv:
             self.iv = get_random_bytes(AES.block_size)
 
@@ -42,15 +40,14 @@ class aes_cfb:
 
 
 class aes_gcm:
-    def __init__(self, key):
-        '''key: Your password like: passw0rd'''
-        self.raw_key = key.encode()
+    def __init__(self, key, salt=None, nonce=None):
+        '''Create a new AES-GCM cipher.
 
-    def new(self, salt=None, nonce=None):
-        '''Create a new AES-GCM cipher
-               salt: a 16 bytes length byte string, if not provided a random salt will be used
-               nonce: a 8 bytes length byte string, if not provided a random nonce will be used
-        '''
+        key: Your password like: passw0rd
+        salt: a 16 bytes length byte string, if not provided a random salt will be used
+        nonce: a 8 bytes length byte string, if not provided a random nonce will be used'''
+
+        self.raw_key = key.encode()
         if not salt:
             self.salt = get_random_bytes(16)
         else:
@@ -84,11 +81,17 @@ class aes_gcm:
 
 
 if __name__ == '__main__':
-    plain = b'holo'
+    # AES-CFB
     en = aes_cfb('test')
-    en.new()
     iv = en.iv
-    cipher = en.encrypt(plain)
-    de = aes_cfb('test')
-    de.new(iv)
-    print(de.decrypt(cipher[:-2]))
+    cipher = en.encrypt(b'holo')
+    de = aes_cfb('test', iv)
+    print(de.decrypt(cipher))
+
+    # AES-GCM
+    gen = aes_gcm('test')
+    salt = gen.salt
+    nonce = gen.nonce
+    gcipher = gen.encrypt(b'holo')
+    gde = aes_gcm('test', salt, nonce)
+    print(gde.decrypt(*gcipher))
