@@ -16,6 +16,7 @@ logging.basicConfig(level=logging.DEBUG,
 
 
 class Remote(asyncio.Protocol):
+
     def connection_made(self, transport):
         self.transport = transport
         self.server_transport = None
@@ -90,7 +91,7 @@ class Server(asyncio.Protocol):
                         if self.data_len < 5 + addr_len + 2:
                             return None
                         else:
-                            addr = self.data_buf[5:5+addr_len]
+                            addr = self.data_buf[5:5 + addr_len]
                             port = struct.unpack('>H', self.data_buf[-2:])[0]
                             target = self.data_buf[4:]
 

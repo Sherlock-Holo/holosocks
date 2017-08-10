@@ -15,6 +15,7 @@ logging.basicConfig(level=logging.DEBUG,
 
 
 class Remote(asyncio.Protocol):
+
     def connection_made(self, transport):
         self.transport = transport
         self.server_transport = None
@@ -43,15 +44,16 @@ class Server(asyncio.Protocol):
             if self.data_len < 1 + addr_len + 2:
                 return None
             else:
-                addr = self.data_buf[1:1+addr_len]
-                port = struct.unpack('>H', self.data_buf[1+addr_len:3+addr_len])
+                addr = self.data_buf[1:1 + addr_len]
+                _port = self.data_buf[1 + addr_len:3 + addr_len]
+                port = struct.unpack('>H', _port)
                 port = port[0]
 
             logging.info('target: {}:{}'.format(addr, port))
 
             # buffer the content which sends with target message
-            if self.data_buf[1+addr_len:3+addr_len] != self.data_buf[-2:]:
-                self.data_buf = self.data_buf[3+addr_len:]
+            if self.data_buf[1 + addr_len:3 + addr_len] != self.data_buf[-2:]:
+                self.data_buf = self.data_buf[3 + addr_len:]
 
             else:
                 # clear buffer and counter
@@ -70,7 +72,7 @@ class Server(asyncio.Protocol):
                     return None
                 else:
                     self.remote_transport.write(self.data_buf)
-
+                    self.state = self.RELAY
 
         elif self.state == self.RELAY:
             logging.info('start relay')
