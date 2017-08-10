@@ -26,11 +26,11 @@ class Remote(asyncio.Protocol):
 
 
 class Server(asyncio.Protocol):
-    INIT, REQUEST, REPLY = 0, 1, 2
+    INIT, REQUEST, REPLY = range(3)
 
     def connection_made(self, transport):
         client_info = transport.get_extra_info('peername')
-        logging.info('connect from {}'.format(client_info))
+        logging.debug('connect from {}'.format(client_info))
         self.transport = transport
         self.state = self.INIT
         self.data_len = 0
@@ -48,8 +48,8 @@ class Server(asyncio.Protocol):
                 if self.data_len < 2 + amount:
                     return None
 
-            if self.data_buf[0] == 5:
-                if 0 in self.data_buf[2:]:
+            if self.data_buf[0] == 5:    # version check
+                if 0 in self.data_buf[2:]:    # no authentication
                     self.transport.write(b'\x05\x00')
                     self.state = self.REQUEST
                     # clear buffer and counter
@@ -57,7 +57,9 @@ class Server(asyncio.Protocol):
                     self.data_buf = b''
 
                 else:
+                    # authentication not support
                     response = struct.pack('>BB', 0x05, 0xff)
+                    logging.error('authentication not support')
                     self.transport.write(response)
                     self.eof_received()
             else:
@@ -70,16 +72,17 @@ class Server(asyncio.Protocol):
                 return None
             else:
                 ver, cmd, rsv, addr_type = self.data_buf[:4]
-                logging.info('addr type: {}'.format(addr_type))
+                logging.debug('addr type: {}'.format(addr_type))
 
                 if addr_type == 1:    # ipv4
-                    # ver cmd rsv atyp addr_ip port
+                    # (ver cmd rsv atyp) addr_ip port
                     if self.data_len < 4 + 8 + 2:
                         return None
                     else:
                         addr = socket.inet_ntoa(self.data_buf[4:8])
                         port = struct.unpack('>H', self.data_buf[-2:])[0]
                         addr_len = struct.pack('>B', len(addr))
+                        # target message: addr_len + addr + port
                         target = addr_len + addr.encode()
                         target += self.data_buf[-2:]
 
@@ -93,6 +96,8 @@ class Server(asyncio.Protocol):
                         else:
                             addr = self.data_buf[5:5 + addr_len]
                             port = struct.unpack('>H', self.data_buf[-2:])[0]
+                            # target message: addr_len + addr + port
+                            # use socks5 raw message
                             target = self.data_buf[4:]
 
                 else:    # addr type not support
@@ -100,10 +105,10 @@ class Server(asyncio.Protocol):
                     response += socket.inet_aton('0.0.0.0')
                     response += struct.pack('>H', 0)
                     self.transport.write(response)
-                    logging.error('not support addr type')
+                    logging.error('addr type not support')
                     self.eof_received()
 
-            logging.info('target: {}:{}'.format(addr, port))
+            logging.debug('target: {}:{}'.format(addr, port))
 
             # connect to shadowsocks server
             asyncio.ensure_future(self.connect(SERVER, SERVER_PORT, target))
@@ -111,23 +116,20 @@ class Server(asyncio.Protocol):
             # clear buffer and counter, actually it is not important here
             self.data_len = 0
             self.data_buf = b''
+            logging.info('start relay')
 
         elif self.state == self.REPLY:
-            logging.info('start relay')
-            #logging.debug('client content: {}'.format(data))
             self.remote_transport.write(data)
 
     async def connect(self, addr, port, target):
-        #logging.debug('connect ot shadowsocks server')
         loop = asyncio.get_event_loop()
         transport, remote = await loop.create_connection(Remote, addr, port)
         remote.server_transport = self.transport
         self.remote_transport = transport
-        # send target message
-        self.remote_transport.write(target)
+        self.remote_transport.write(target)    # send target message
         response = b'\x05\x00\x00\x01'
         response += socket.inet_aton('0.0.0.0') + struct.pack('>H', 0)
-        self.transport.write(response)
+        self.transport.write(response)    # send response to socks5 client
 
 
 if __name__ == '__main__':

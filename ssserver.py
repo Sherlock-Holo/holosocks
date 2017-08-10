@@ -29,14 +29,13 @@ class Server(asyncio.Protocol):
 
     def connection_made(self, transport):
         sslocal_info = transport.get_extra_info('peername')
-        logging.info('shadowsocks local {}'.format(sslocal_info))
+        logging.debug('shadowsocks local {}'.format(sslocal_info))
         self.transport = transport
         self.state = self.INIT
         self.data_len = 0
         self.data_buf = b''
 
     def data_received(self, data):
-        #logging.debug('state: {}'.format(self.state))
         if self.state == self.INIT:
             self.data_buf += data
             self.data_len += len(data)
@@ -49,7 +48,7 @@ class Server(asyncio.Protocol):
                 port = struct.unpack('>H', _port)
                 port = port[0]
 
-            logging.info('target: {}:{}'.format(addr, port))
+            logging.debug('target: {}:{}'.format(addr, port))
 
             # buffer the content which sends with target message
             if self.data_buf[1 + addr_len:3 + addr_len] != self.data_buf[-2:]:
@@ -66,17 +65,22 @@ class Server(asyncio.Protocol):
 
         elif self.state == self.CONNECTING_TARGET:
             self.data_buf += data
-            #logging.debug('client content: {}'.format(self.data_buf))
-            if self.target.done():
+            if self.target.done():    # connected target
+            # There are 2 cases:
+            # Connected to target before call it, so data in buffer will send
+            # to target and buffer will be empty. (else case)
+            #
+            # Buffer the data after connected to target, so it will send data
+            # to target. (if case)
                 if self.data_buf == b'':
-                    return None
+                    self.state = self.RELAY
                 else:
                     self.remote_transport.write(self.data_buf)
                     self.state = self.RELAY
 
+                logging.info('start relay')
+
         elif self.state == self.RELAY:
-            logging.info('start relay')
-            #logging.debug('client content: {}'.format(data))
             self.remote_transport.write(data)
 
     async def connect(self, addr, port):
@@ -86,7 +90,8 @@ class Server(asyncio.Protocol):
         remote.server_transport = self.transport    # set target_transport
         self.remote_transport = transport    # set remote_transport
         logging.debug('target connected')
-        self.remote_transport.write(self.data_buf)
+        if self.data_buf:
+            self.remote_transport.write(self.data_buf)
         self.data_buf = b''
 
 
