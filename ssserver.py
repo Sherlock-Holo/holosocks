@@ -46,7 +46,7 @@ class Server(asyncio.Protocol):
                 addr = self.data_buf[1:1+addr_len]
                 port = struct.unpack('>H', self.data_buf[-2:])[0]
 
-            logging.info('target: {}:{}'.format(addr, port))
+            logging.info('target: {}:{}\ndata: {}'.format(addr, port, self.data_buf))
             # connect to taeget
             self.target = asyncio.ensure_future(self.connect(addr, port))
             self.state = self.CONNECTING_TARGET
