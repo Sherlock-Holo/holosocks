@@ -1,12 +1,10 @@
 #!/usr/bin/env python3
 
 import argparse
-import gevent
+import asyncio
 import json
 import logging
 import struct
-from gevent import socket
-from gevent.server import StreamServer
 
 from encrypt import aes_cfb
 
@@ -16,63 +14,70 @@ logging.basicConfig(level=logging.DEBUG,
                     style='{')
 
 
-class Socks5Server(StreamServer):
-    def sock2remote(self, fr, to):
-        try:
-            while True:
-                if to.send(self.de.decrypt(fr.recv(4096))) <= 0:
-                    break
+class Remote(asyncio.Protocol):
+    def connection_made(self, transport):
+        self.transport = transport
+        self.server_transport = None
 
-        except socket.error:
-            pass
+    def data_received(self, data):
+        self.server_transport.write(data)
 
-    def remote2sock(self, fr, to):
-        try:
-            while True:
-                if to.send(self.en.encrypt(fr.recv(4096))) <= 0:
-                    break
 
-        except socket.error:
-            pass
+class Server(asyncio.Protocol):
+    INIT, CONNECTING_TARGET, RELAY = range(3)
 
-    def handle(self, sock, address):
-        logging.info('socks connection from {}'.format(address))
-        # create encrypt function
-        iv = sock.recv(16)
-        self.en = aes_cfb(KEY)
-        self.en.new(iv)
-        self.de = aes_cfb(KEY)
-        self.de.new(iv)
+    def connection_made(self, transport):
+        sslocal_info = transport.get_extra_info('peername')
+        logging.info('shadowsocks local {}'.format(sslocal_info))
+        self.transport = transport
+        self.state = self.INIT
+        self.data_len = 0
+        self.data_buf = b''
 
-        addr_type = ord(self.de.decrypt(sock.recv(1)))
-        logging.info('addr type: {}'.format(addr_type))
+    def data_received(self, data):
+        #logging.debug('state: {}'.format(self.state))
+        if self.state == self.INIT:
+            self.data_buf += data
+            self.data_len += len(data)
+            addr_len = self.data_buf[0]
+            if self.data_len < 1 + addr_len + 2:
+                return None
+            else:
+                addr = self.data_buf[1:1+addr_len]
+                port = struct.unpack('>H', self.data_buf[-2:])[0]
 
-        if addr_type == 1:
-            addr_ip = self.de.decrypt(sock.recv(4))
-            addr = socket.inet_ntoa(addr_ip)
+            logging.info('target: {}:{}'.format(addr, port))
+            # connect to taeget
+            self.target = asyncio.ensure_future(self.connect(addr, port))
+            self.state = self.CONNECTING_TARGET
+            # clear buffer and counter
+            self.data_len = 0
+            self.data_buf = b''
 
-        elif addr_type == 3:
-            addr_len = self.de.decrypt(sock.recv(1))
-            logging.info('addr len: {}'.format(ord(addr_len)))
-            addr = self.de.decrypt(sock.recv(ord(addr_len)))
+        elif self.state == self.CONNECTING_TARGET:
+            self.data_buf += data
+            #logging.debug('client content: {}'.format(self.data_buf))
+            if self.target.done():
+                if self.data_buf == b'':
+                    return None
+                else:
+                    self.remote_transport.write(self.data_buf)
 
-        else:
-            logging.error('not support addr type')
-            sock.close()
-            return None
 
-        port = struct.unpack('>H', self.de.decrypt(sock.recv(2)))[0]
+        elif self.state == self.RELAY:
+            logging.info('start relay')
+            #logging.debug('client content: {}'.format(data))
+            self.remote_transport.write(data)
 
-        logging.info('address: {}, port: {}'.format(addr, port))
-
-        remote = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        remote.connect((addr, port))
-
-        # start relay
-        logging.info('start relay')
-        sock2remote = gevent.spawn(self.sock2remote, sock, remote)
-        remote2sock = gevent.spawn(self.remote2sock, remote, sock)
-        gevent.joinall((sock2remote, remote2sock))
+    async def connect(self, addr, port):
+        logging.debug('connecting target')
+        loop = asyncio.get_event_loop()
+        transport, remote = await loop.create_connection(Remote, addr, port)
+        remote.server_transport = self.transport    # set target_transport
+        self.remote_transport = transport    # set remote_transport
+        logging.debug('target connected')
+        self.remote_transport.write(self.data_buf)
+        self.data_buf = b''
 
 
 if __name__ == '__main__':
@@ -88,9 +93,14 @@ if __name__ == '__main__':
     PORT = config['local_port']
     KEY = config['password']
 
+    loop = asyncio.get_event_loop()
+    server = loop.create_server(Server, '0.0.0.0', SERVER_PORT)
+    loop.run_until_complete(server)
+
     try:
-        server = Socks5Server((SERVER, SERVER_PORT))
-        server.serve_forever()
+        loop.run_forever()
 
     except KeyboardInterrupt:
         server.close()
+        loop.run_until_complete(server.close())
+        loop.close()

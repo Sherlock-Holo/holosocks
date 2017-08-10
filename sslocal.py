@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
 
 import argparse
-import gevent
+import asyncio
 import json
 import logging
+import socket
 import struct
-from gevent import socket
-from gevent.server import StreamServer
 
 from encrypt import aes_cfb
 
@@ -16,100 +15,119 @@ logging.basicConfig(level=logging.DEBUG,
                     style='{')
 
 
-class Socks5Server(StreamServer):
-    def sock2remote(self, fr, to):
-        try:
-            while True:
-                if to.send(self.en.encrypt(fr.recv(4096))) <= 0:
-                    break
+class Remote(asyncio.Protocol):
+    def connection_made(self, transport):
+        self.transport = transport
+        self.server_transport = None
 
-        except socket.error:
-            pass
+    def data_received(self, data):
+        self.server_transport.write(data)
 
-    def remote2sock(self, fr, to):
-        try:
-            while True:
-                if to.send(self.de.decrypt(fr.recv(4096))) <= 0:
-                    break
 
-        except socket.error:
-            pass
+class Server(asyncio.Protocol):
+    INIT, REQUEST, REPLY = 0, 1, 2
 
-    def handle(self, sock, address):
-        logging.info('socks connection from {}'.format(address))
+    def connection_made(self, transport):
+        client_info = transport.get_extra_info('peername')
+        logging.info('connect from {}'.format(client_info))
+        self.transport = transport
+        self.state = self.INIT
+        self.data_len = 0
+        self.data_buf = b''
 
-        ask = sock.recv(3)    # connect to socks server
-        logging.info(ask[0])
-        if ask[0] == 5:    # check version
-            if ask[-1] == 0:    # check Authentication info
-                sock.send(b'\x05\x00')
-
-            else:
-                logging.error('Authentication error')
-                sock.send(struct.pack('>BB', 0x05, 0xff))
-                sock.close()
+    def data_received(self, data):
+        if self.state == self.INIT:
+            # recv all ask data
+            self.data_buf += data
+            self.data_len += len(data)
+            if self.data_len < 2:
                 return None
-        else:
-            logging.error('version error')
-            sock.close()
-            return None
+            else:
+                amount = self.data_buf[1]    # Authentication amount
+                if self.data_len < 2 + amount:
+                    return None
 
-        logging.info('Authentication successed')
+            if self.data_buf[0] == 5:
+                if 0 in self.data_buf[2:]:
+                    self.transport.write(b'\x05\x00')
+                    self.state = self.REQUEST
+                    # clear buffer and counter
+                    self.data_len = 0
+                    self.data_buf = b''
 
-        data = sock.recv(4)    # request format: VER CMD RSV ATYP (4 bytes)
-        if not data[1] == 1:    # CMD not support
-            addr_and_port = socket.inet_aton('0.0.0.0') + struct.pack('>H', 0)
-            sock.send(b'\x05\x07\x00\x01' + addr_and_port)
+                else:
+                    response = struct.pack('>BB', 0x05, 0xff)
+                    self.transport.write(response)
+                    self.eof_received()
+            else:
+                self.eof_received()
 
-        addr_type = data[3]    # get atyp (1 byte)
-        logging.info('addr type: {}'.format(addr_type))
-        data_to_send = struct.pack('>B', addr_type)
+        elif self.state == self.REQUEST:
+            self.data_buf += data
+            self.data_len += len(data)
+            if self.data_len < 4:
+                return None
+            else:
+                ver, cmd, rsv, addr_type = self.data_buf[:4]
+                logging.info('addr type: {}'.format(addr_type))
 
-        if addr_type == 1:
-            addr = socket.inet_ntoa(sock.recv(4))    # ipv4
+                if addr_type == 1:    # ipv4
+                    # ver cmd rsv atyp addr_ip port
+                    if self.data_len < 4 + 8 + 2:
+                        return None
+                    else:
+                        addr = socket.inet_ntoa(self.data_buf[4:8])
+                        port = struct.unpack('>H', self.data_buf[-2:])[0]
+                        addr_len = struct.pack('>B', len(addr))
+                        target = addr_len + addr.encode()
+                        target += self.data_buf[-2:]
 
-        elif addr_type == 3:
-            addr_len = sock.recv(1)
-            data_to_send += addr_len
-            addr = sock.recv(ord(addr_len))    # domain name
+                elif addr_type == 3:    # domain name
+                    if self.data_len < 4 + 1:
+                        return None
+                    else:
+                        addr_len = self.data_buf[4]
+                        if self.data_len < 5 + addr_len + 2:
+                            return None
+                        else:
+                            addr = self.data_buf[5:5+addr_len]
+                            port = struct.unpack('>H', self.data_buf[-2:])[0]
+                            target = struct.pack('>B', addr_len) + addr
+                            target += self.data_buf[-2:]
 
-        else:
-            addr_and_port = socket.inet_aton('0.0.0.0') + struct.pack('>H', 0)
-            sock.send(b'\x05\x08\x00\x01' + addr_and_port)
-            sock.close()
-            return None
+                else:    # addr type not support
+                    response = b'\x05\x08\x00\x01'
+                    response += socket.inet_aton('0.0.0.0')
+                    response += struct.pack('>H', 0)
+                    self.transport.write(response)
+                    logging.error('not support addr type')
+                    self.eof_received()
 
-        data_to_send += addr
+            logging.info('target: {}:{}'.format(addr, port))
 
-        _port = sock.recv(2)    # get target port
-        port = struct.unpack('>H', _port)[0]
-        logging.info('address: {}, port: {}'.format(addr, port))
+            # connect to shadowsocks server
+            asyncio.ensure_future(self.connect(SERVER, SERVER_PORT, target))
+            self.state = self.REPLY
+            # clear buffer and counter, actually it is not important here
+            self.data_len = 0
+            self.data_buf = b''
 
-        data_to_send += _port
+        elif self.state == self.REPLY:
+            logging.info('start relay')
+            #logging.debug('client content: {}'.format(data))
+            self.remote_transport.write(data)
 
-        # create encrypt function
-        self.en = aes_cfb(KEY)
-        self.en.new()
-        iv = self.en.iv
-        self.de = aes_cfb(KEY)
-        self.de.new(iv)
-
-        # connect ssserver
-        remote = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        remote.connect((SERVER, SERVER_PORT))
-        logging.info('connected ssserver')
-        remote.send(iv)    # send iv
-        remote.send(self.en.encrypt(data_to_send))
-
-        data = b'\x05\x00\x00\x01'
-        data += socket.inet_aton('0.0.0.0') + struct.pack('>H', 0)
-        sock.send(data)
-
-        # start relay
-        logging.info('start relay')
-        sock2remote = gevent.spawn(self.sock2remote, sock, remote)
-        remote2sock = gevent.spawn(self.remote2sock, remote, sock)
-        gevent.joinall((sock2remote, remote2sock))
+    async def connect(self, addr, port, target):
+        #logging.debug('connect ot shadowsocks server')
+        loop = asyncio.get_event_loop()
+        transport, remote = await loop.create_connection(Remote, addr, port)
+        remote.server_transport = self.transport
+        self.remote_transport = transport
+        # send target message
+        self.remote_transport.write(target)
+        response = b'\x05\x00\x00\x01'
+        response += socket.inet_aton('0.0.0.0') + struct.pack('>H', 0)
+        self.transport.write(response)
 
 
 if __name__ == '__main__':
@@ -125,9 +143,14 @@ if __name__ == '__main__':
     PORT = config['local_port']
     KEY = config['password']
 
+    loop = asyncio.get_event_loop()
+    server = loop.create_server(Server, '127.0.0.2', PORT)
+    loop.run_until_complete(server)
+
     try:
-        server = Socks5Server(('127.0.0.2', PORT))
-        server.serve_forever()
+        loop.run_forever()
 
     except KeyboardInterrupt:
         server.close()
+        loop.run_until_complete(server.close())
+        loop.close()
