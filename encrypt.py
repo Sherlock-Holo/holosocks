@@ -82,6 +82,7 @@ class aes_gcm:
 
 if __name__ == '__main__':
     # AES-CFB
+    print('AES-256-CFB')
     en = aes_cfb('test')
     iv = en.iv
     cipher = en.encrypt(b'holo')
@@ -89,6 +90,7 @@ if __name__ == '__main__':
     print(de.decrypt(cipher))
 
     # AES-GCM
+    print('AES-256-GCM')
     gen = aes_gcm('test')
     salt = gen.salt
     nonce = gen.nonce
