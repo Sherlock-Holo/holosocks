@@ -44,15 +44,23 @@ class Server(asyncio.Protocol):
                 return None
             else:
                 addr = self.data_buf[1:1+addr_len]
-                port = struct.unpack('>H', self.data_buf[-2:])[0]
+                port = struct.unpack('>H', self.data_buf[1+addr_len:3+addr_len])
+                port = port[0]
 
-            logging.info('target: {}:{}\ndata: {}'.format(addr, port, self.data_buf))
+            logging.info('target: {}:{}'.format(addr, port))
+
+            # buffer the content which sends with target message
+            if self.data_buf[1+addr_len:3+addr_len] != self.data_buf[-2:]:
+                self.data_buf = self.data_buf[3+addr_len:]
+
+            else:
+                # clear buffer and counter
+                self.data_len = 0
+                self.data_buf = b''
+
             # connect to taeget
             self.target = asyncio.ensure_future(self.connect(addr, port))
             self.state = self.CONNECTING_TARGET
-            # clear buffer and counter
-            self.data_len = 0
-            self.data_buf = b''
 
         elif self.state == self.CONNECTING_TARGET:
             self.data_buf += data
