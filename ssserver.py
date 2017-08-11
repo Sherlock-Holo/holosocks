@@ -96,6 +96,7 @@ class Server(asyncio.Protocol):
 
 
 if __name__ == '__main__':
+    logging.info('start shadowsocks server')
     parser = argparse.ArgumentParser(description='shadowsocks server')
     parser.add_argument('-c', '--config', help='config file')
     args = parser.parse_args()
@@ -109,13 +110,15 @@ if __name__ == '__main__':
     KEY = config['password']
 
     loop = asyncio.get_event_loop()
-    server = loop.create_server(Server, '0.0.0.0', SERVER_PORT)
-    loop.run_until_complete(server)
+    _server = loop.create_server(Server, '0.0.0.0', SERVER_PORT)
+    server = loop.run_until_complete(_server)
 
     try:
         loop.run_forever()
 
     except KeyboardInterrupt:
-        server.close()
-        loop.run_until_complete(server.close())
-        loop.close()
+        pass
+
+    server.close()
+    loop.run_until_complete(server.wait_closed())
+    loop.close()
