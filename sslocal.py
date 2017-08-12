@@ -20,9 +20,10 @@ class Remote(asyncio.Protocol):
     def connection_made(self, transport):
         self.transport = transport
         self.server_transport = None
+        self.Decrypt = None
 
     def data_received(self, data):
-        self.server_transport.write(data)
+        self.server_transport.write(self.Decrypt.decrypt(data))
 
 
 class Server(asyncio.Protocol):
@@ -35,6 +36,9 @@ class Server(asyncio.Protocol):
         self.state = self.INIT
         self.data_len = 0
         self.data_buf = b''
+        self.Encrypt = aes_cfb(KEY)
+        self.iv = self.Encrypt.iv
+        self.Decrypt = aes_cfb(KEY, self.iv)
 
     def data_received(self, data):
         if self.state == self.INIT:
@@ -100,7 +104,8 @@ class Server(asyncio.Protocol):
                             # use socks5 raw message
                             target = self.data_buf[4:]
 
-                else:    # addr type not support
+                else:
+                    # addr type not support
                     response = b'\x05\x08\x00\x01'
                     response += socket.inet_aton('0.0.0.0')
                     response += struct.pack('>H', 0)
@@ -119,14 +124,21 @@ class Server(asyncio.Protocol):
             logging.info('start relay')
 
         elif self.state == self.REPLY:
-            self.remote_transport.write(data)
+            self.remote_transport.write(self.Encrypt.encrypt(data))
 
     async def connect(self, addr, port, target):
         loop = asyncio.get_event_loop()
         transport, remote = await loop.create_connection(Remote, addr, port)
         remote.server_transport = self.transport
+        remote.Decrypt = self.Decrypt
         self.remote_transport = transport
-        self.remote_transport.write(target)    # send target message
+
+        self.remote_transport.write(self.iv)    # send iv
+        logging.debug('iv: {}'.format(self.iv))
+        # send target message
+        target = self.Encrypt.encrypt(target)
+        #logging.debug('target: {}'.format(target))
+        self.remote_transport.write(target)
         response = b'\x05\x00\x00\x01'
         response += socket.inet_aton('0.0.0.0') + struct.pack('>H', 0)
         self.transport.write(response)    # send response to socks5 client
