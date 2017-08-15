@@ -27,7 +27,7 @@ class Remote(asyncio.Protocol):
 
 
 class Server(asyncio.Protocol):
-    INIT, REQUEST, REPLY = range(3)
+    INIT, REQUEST, RELAY = range(3)
 
     def connection_made(self, transport):
         client_info = transport.get_extra_info('peername')
@@ -117,13 +117,13 @@ class Server(asyncio.Protocol):
 
             # connect to shadowsocks server
             asyncio.ensure_future(self.connect(SERVER, SERVER_PORT, target))
-            self.state = self.REPLY
+            self.state = self.RELAY
             # clear buffer and counter, actually it is not important here
             self.data_len = 0
             self.data_buf = b''
             logging.info('start relay')
 
-        elif self.state == self.REPLY:
+        elif self.state == self.RELAY:
             self.remote_transport.write(self.Encrypt.encrypt(data))
 
     async def connect(self, addr, port, target):
