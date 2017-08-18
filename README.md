@@ -8,3 +8,4 @@ a simple proxy tool like Shadowsocks but it is not compatible with Shadowsocks
 ## Requires
 * python >= 3.5
 * python-pycryptodomex (instead of pycrypto)
+* python-pycrypto (compatible)
