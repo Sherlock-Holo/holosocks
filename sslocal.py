@@ -121,7 +121,7 @@ class Server(asyncio.Protocol):
             # clear buffer and counter, actually it is not important here
             self.data_len = 0
             self.data_buf = b''
-            logging.info('start relay')
+            logging.debug('start relay')
 
         elif self.state == self.RELAY:
             self.remote_transport.write(self.Encrypt.encrypt(data))
