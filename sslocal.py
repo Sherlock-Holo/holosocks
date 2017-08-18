@@ -159,7 +159,7 @@ if __name__ == '__main__':
     KEY = config['password']
 
     loop = asyncio.get_event_loop()
-    _server = loop.create_server(Server, '127.0.0.2', PORT)
+    _server = loop.create_server(Server, '127.0.0.1', PORT)
     server = loop.run_until_complete(_server)
 
     try:
