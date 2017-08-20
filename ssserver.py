@@ -115,7 +115,7 @@ class Server(asyncio.Protocol):
                     self.remote_transport.write(plain_data)
                     self.state = self.RELAY
 
-                logging.info('start relay')
+                logging.debug('start relay')
 
         elif self.state == self.RELAY:
             self.remote_transport.write(self.Decrypt.decrypt(data))
