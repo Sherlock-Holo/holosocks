@@ -14,123 +14,43 @@ logging.basicConfig(level=logging.INFO,
                     style='{')
 
 
-class Remote(asyncio.Protocol):
+class Server:
 
-    def connection_made(self, transport):
-        self.transport = transport
-        self.server_transport = None
-        self.Encrypt = None
+    async def sock2remote(self):
+        pass
 
-    def data_received(self, data):
-        self.server_transport.write(self.Encrypt.encrypt(data))
+    async def remote2sock(self):
+        pass
+
+    async def handle(self, reader, writer):
+        iv = await reader.read(16)
+        self.Encrypt = aes_cfb(KEY, iv)
+        self.Decrypt = aes_cfb(KEY, iv)
+
+        _addr_len = await reader.read(1)
+        _addr_len = self.Decrypt.decrypt(_addr_len)
+        addr_len = struct.unpack('>B', _addr_len)
+        _addr = await reader.read(addr_len)
+        addr = self.Decrypt.decrypt(_addr)
+
+        _port = await.reader.read(2)
+        _port = self.Decrypt.decrypt(_port)
+        port = struct.unpack('>H', _port)
+
+        try:
+            r_reader, r_writer = await asyncio.open_connection(addr, port)
+
+        except OSError as e:
+            logging.error(e)
+            writer.close()
+            return None
+
+        self.reader = reader
+        self.writer = writer
+        self.r_reader = r_reader
+        self.r_writer = r_writer
 
 
-class Server(asyncio.Protocol):
-    INIT, CONNECTING_TARGET, RELAY = range(3)
-
-    def connection_made(self, transport):
-        sslocal_info = transport.get_extra_info('peername')
-        logging.debug('shadowsocks local {}'.format(sslocal_info))
-        self.transport = transport
-        self.state = self.INIT
-        self.data_len = 0
-        self.data_buf = b''
-        self.Encrypt = None
-        self.Decrypt = None
-
-        # test
-        self.addr_len = 0
-
-    def data_received(self, data):
-        if self.state == self.INIT:
-            # recv iv
-            self.data_buf += data
-            self.data_len += len(data)
-            if self.data_len < 16:
-                return None
-
-            elif self.data_len == 16:
-                iv = self.data_buf
-                self.Encrypt = aes_cfb(KEY, iv)
-                self.Decrypt = aes_cfb(KEY, iv)
-                return None
-
-            elif self.data_len > 16:
-                if not self.Encrypt:
-                    iv = self.data_buf[:16]
-                    logging.debug('iv: {}'.format(iv))
-                    self.Encrypt = aes_cfb(KEY, iv)
-                    self.Decrypt = aes_cfb(KEY, iv)
-
-                if not self.addr_len:
-                    _addr_len = struct.pack('>B', self.data_buf[16])
-                    #logging.debug('target: {}'.format(self.data_buf))
-                    self.addr_len = ord(self.Decrypt.decrypt(_addr_len))
-                    logging.debug('addr len: {}'.format(self.addr_len))
-
-                if self.data_len < 16 + 1 + self.addr_len + 2:
-                    return None
-
-                elif self.data_len == 16 + 1 + self.addr_len + 2:
-                    plain_data = self.Decrypt.decrypt(self.data_buf)
-                    addr = plain_data[17:17 + self.addr_len]
-                    port = struct.unpack('>H', plain_data[-2:])[0]
-
-                    # clear buffer and counter
-                    self.data_len = 0
-                    self.data_buf = b''
-
-                elif self.data_len > 16 + 1 + self.addr_len + 2:
-                    _len = 16 + 1 + self.addr_len + 2
-                    plain_data = self.Decrypt.decrypt(self.data_buf[:_len])
-
-                    # buffer the content which sends with target message
-                    self.data_buf = self.data_buf[_len:]
-                    self.data_len = len(self.data_buf)
-
-                    addr = plain_data[17:17 + self.addr_len]
-                    logging.debug('addr: {}'.format(addr))
-                    logging.debug('port: {}'.format(plain_data[-2:]))
-                    port = struct.unpack('>H', plain_data[-2:])[0]
-
-            logging.debug('target: {}:{}'.format(addr, port))
-
-            # connect to taeget
-            self.target = asyncio.ensure_future(self.connect(addr, port))
-            self.state = self.CONNECTING_TARGET
-
-        elif self.state == self.CONNECTING_TARGET:
-            self.data_buf += data
-            if self.target.done():    # connected target
-                # There are 2 cases:
-                # Connected to target before call it, so data in buffer will
-                # send to target and buffer will be empty. (else case)
-                #
-                # Buffer the data after connected to target, so it will send
-                # data to target. (if case)
-                if self.data_buf == b'':
-                    self.state = self.RELAY
-                else:
-                    plain_data = self.Decrypt.decrypt(self.data_buf)
-                    self.remote_transport.write(plain_data)
-                    self.state = self.RELAY
-
-                logging.debug('start relay')
-
-        elif self.state == self.RELAY:
-            self.remote_transport.write(self.Decrypt.decrypt(data))
-
-    async def connect(self, addr, port):
-        logging.debug('connecting target')
-        loop = asyncio.get_event_loop()
-        transport, remote = await loop.create_connection(Remote, addr, port)
-        remote.server_transport = self.transport    # set target_transport
-        remote.Encrypt = self.Encrypt
-        self.remote_transport = transport    # set remote_transport
-        logging.debug('target connected')
-        if self.data_buf:
-            self.remote_transport.write(self.Decrypt.decrypt(self.data_buf))
-        self.data_buf = b''
 
 
 if __name__ == '__main__':
