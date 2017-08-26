@@ -39,6 +39,7 @@ class Server(asyncio.Protocol):
         self.Encrypt = aes_cfb(KEY)
         self.iv = self.Encrypt.iv
         self.Decrypt = aes_cfb(KEY, self.iv)
+        self.ipv6 = None
 
     def data_received(self, data):
         if self.state == self.INIT:
@@ -104,6 +105,17 @@ class Server(asyncio.Protocol):
                             # use socks5 raw message
                             target = self.data_buf[4:]
 
+                elif addr_type == 4:
+                    if self.data_len < 4 + 16 + 2:
+                        return None
+                    else:
+                        addr = socket.inet_ntop(socket.AF_INET6, self.data_buf[4:20])
+                        port = struct.unpack('>H', self.data_buf[-2:])[0]
+                        addr_len = struct.pack('>B', len(addr))
+                        # target message: addr_len + addr + port
+                        target = addr_len + addr.encode()
+                        target += self.data_buf[-2:]
+
                 else:
                     # addr type not support
                     response = b'\x05\x08\x00\x01'
@@ -140,7 +152,11 @@ class Server(asyncio.Protocol):
         #logging.debug('target: {}'.format(target))
         self.remote_transport.write(target)
         response = b'\x05\x00\x00\x01'
-        response += socket.inet_aton('0.0.0.0') + struct.pack('>H', 0)
+        if not self.ipv6:
+            response += socket.inet_aton('0.0.0.0') + struct.pack('>H', 0)
+        else:
+            response += socket.inet_pton(socket.AF_INET6, '::')
+            response += struct.pack('>H', 0)
         self.transport.write(response)    # send response to socks5 client
 
 
