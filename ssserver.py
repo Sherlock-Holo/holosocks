@@ -8,53 +8,86 @@ import struct
 
 from encrypt import aes_cfb
 
-logging.basicConfig(level=logging.INFO,
+logging.basicConfig(level=logging.DEBUG,
                     format='{asctime} {levelname} {message}',
                     datefmt='%Y-%m-%d %H:%M:%S',
                     style='{')
 
 
-class Server:
+async def handle(reader, writer):
+    iv = await reader.read(16)
+    Encrypt = aes_cfb(KEY, iv)
+    Decrypt = aes_cfb(KEY, iv)
 
-    async def sock2remote(self):
-        pass
+    _addr_len = await reader.read(1)
+    _addr_len = Decrypt.decrypt(_addr_len)
+    addr_len = struct.unpack('>B', _addr_len)[0]
 
-    async def remote2sock(self):
-        pass
+    _addr = await reader.read(addr_len)
+    addr = Decrypt.decrypt(_addr)
 
-    async def handle(self, reader, writer):
-        iv = await reader.read(16)
-        self.Encrypt = aes_cfb(KEY, iv)
-        self.Decrypt = aes_cfb(KEY, iv)
+    _port = await reader.read(2)
+    _port = Decrypt.decrypt(_port)
+    port = struct.unpack('>H', _port)[0]
 
-        _addr_len = await reader.read(1)
-        _addr_len = self.Decrypt.decrypt(_addr_len)
-        addr_len = struct.unpack('>B', _addr_len)
-        _addr = await reader.read(addr_len)
-        addr = self.Decrypt.decrypt(_addr)
+    logging.debug('target {}:{}'.format(addr, port))
 
-        _port = await.reader.read(2)
-        _port = self.Decrypt.decrypt(_port)
-        port = struct.unpack('>H', _port)
+    try:
+        r_reader, r_writer = await asyncio.open_connection(addr, port)
 
-        try:
-            r_reader, r_writer = await asyncio.open_connection(addr, port)
+    except OSError as e:
+        logging.error(e)
+        writer.close()
+        return None
 
-        except OSError as e:
-            logging.error(e)
-            writer.close()
-            return None
+    async def sock2remote():
+        while True:
+            try:
+                data = await reader.read(8192)
 
-        self.reader = reader
-        self.writer = writer
-        self.r_reader = r_reader
-        self.r_writer = r_writer
+            except OSError as e:
+                logging.error(e)
+                break
 
+            if not data:
+                break
 
+            else:
+                r_writer.write(Decrypt.decrypt(data))
+                await r_writer.drain()
+
+    async def remote2sock():
+        while True:
+            try:
+                data = await r_reader.read(8192)
+
+            except OSError as e:
+                logging.error(e)
+                break
+
+            if not data:
+                break
+
+            else:
+                writer.write(Encrypt.encrypt(data))
+                await writer.drain()
+
+    def close_sock(future):
+        writer.close()
+        r_writer.close()
+        logging.debug('relay stop')
+
+    logging.debug('start relay')
+
+    s2r = asyncio.ensure_future(sock2remote())
+    r2s = asyncio.ensure_future(remote2sock())
+
+    s2r.add_done_callback(close_sock)
+    r2s.add_done_callback(close_sock)
 
 
 if __name__ == '__main__':
-    logging.info('start shadowsocks server')
+    #logging.info('start shadowsocks server')
     parser = argparse.ArgumentParser(description='shadowsocks server')
     parser.add_argument('-c', '--config', help='config file')
     args = parser.parse_args()
@@ -68,15 +101,13 @@ if __name__ == '__main__':
     KEY = config['password']
 
     loop = asyncio.get_event_loop()
-    _server = loop.create_server(Server, '0.0.0.0', SERVER_PORT)
-    server = loop.run_until_complete(_server)
+    coro = asyncio.start_server(handle, SERVER, SERVER_PORT)
+    server = loop.run_until_complete(coro)
 
     try:
         loop.run_forever()
 
     except KeyboardInterrupt:
-        pass
-
-    server.close()
-    loop.run_until_complete(server.wait_closed())
-    loop.close()
+        server.close()
+        loop.run_until_complete(server.wait_closed())
+        loop.close()
