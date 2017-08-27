@@ -9,7 +9,7 @@ import struct
 
 from encrypt import aes_cfb
 
-logging.basicConfig(level=logging.DEBUG,
+logging.basicConfig(level=logging.ERROR,
                     format='{asctime} {levelname} {message}',
                     datefmt='%Y-%m-%d %H:%M:%S',
                     style='{')
