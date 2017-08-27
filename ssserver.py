@@ -101,7 +101,7 @@ if __name__ == '__main__':
     KEY = config['password']
 
     loop = asyncio.get_event_loop()
-    coro = asyncio.start_server(handle, SERVER, SERVER_PORT)
+    coro = asyncio.start_server(handle, (SERVER, '::'), SERVER_PORT)
     server = loop.run_until_complete(coro)
 
     try:
