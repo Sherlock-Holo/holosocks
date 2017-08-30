@@ -2,45 +2,64 @@
 
 import argparse
 import asyncio
+import functools
 import json
 import logging
 import struct
 
 from encrypt import aes_cfb
 
-logging.basicConfig(level=logging.ERROR,
-                    format='{asctime} {levelname} {message}',
-                    datefmt='%Y-%m-%d %H:%M:%S',
-                    style='{')
+logging.basicConfig(
+    level=logging.ERROR,
+    format='{asctime} {levelname} {message}',
+    datefmt='%Y-%m-%d %H:%M:%S',
+    style='{')
 
 
-async def handle(reader, writer):
-    iv = await reader.read(16)
-    Encrypt = aes_cfb(KEY, iv)
-    Decrypt = aes_cfb(KEY, iv)
+class Server:
+    S2R, R2S = range(2)
 
-    _addr_len = await reader.read(1)
-    _addr_len = Decrypt.decrypt(_addr_len)
-    addr_len = struct.unpack('>B', _addr_len)[0]
+    async def handle(self, reader, writer):
+        iv = await reader.read(16)
+        Encrypt = aes_cfb(KEY, iv)
+        Decrypt = aes_cfb(KEY, iv)
 
-    _addr = await reader.read(addr_len)
-    addr = Decrypt.decrypt(_addr)
+        _addr_len = await reader.read(1)
+        _addr_len = Decrypt.decrypt(_addr_len)
+        addr_len = struct.unpack('>B', _addr_len)[0]
 
-    _port = await reader.read(2)
-    _port = Decrypt.decrypt(_port)
-    port = struct.unpack('>H', _port)[0]
+        _addr = await reader.read(addr_len)
+        addr = Decrypt.decrypt(_addr)
 
-    logging.debug('target {}:{}'.format(addr, port))
+        _port = await reader.read(2)
+        _port = Decrypt.decrypt(_port)
+        port = struct.unpack('>H', _port)[0]
 
-    try:
-        r_reader, r_writer = await asyncio.open_connection(addr, port)
+        logging.debug('target {}:{}'.format(addr, port))
 
-    except OSError as e:
-        logging.error(e)
-        writer.close()
-        return None
+        try:
+            r_reader, r_writer = await asyncio.open_connection(addr, port)
 
-    async def sock2remote():
+        except OSError as e:
+            logging.error(e)
+            writer.close()
+            return None
+
+        logging.debug('start relay')
+
+        s2r = asyncio.ensure_future(
+            self.relay(reader, r_writer, Decrypt, self.S2R))
+
+        r2s = asyncio.ensure_future(
+            self.relay(r_reader, writer, Encrypt, self.R2S))
+
+        s2r.add_done_callback(
+            functools.partial(self.close_transport, writer))
+
+        r2s.add_done_callback(
+            functools.partial(self.close_transport, r_writer))
+
+    async def relay(self, reader, writer, cipher, mode):
         while True:
             try:
                 data = await reader.read(8192)
@@ -49,19 +68,7 @@ async def handle(reader, writer):
                 logging.error(e)
                 break
 
-            if not data:
-                break
-
-            else:
-                r_writer.write(Decrypt.decrypt(data))
-                await r_writer.drain()
-
-    async def remote2sock():
-        while True:
-            try:
-                data = await r_reader.read(8192)
-
-            except OSError as e:
+            except ConnectionResetError as e:
                 logging.error(e)
                 break
 
@@ -69,21 +76,15 @@ async def handle(reader, writer):
                 break
 
             else:
-                writer.write(Encrypt.encrypt(data))
+                if mode == self.S2R:
+                    writer.write(cipher.decrypt(data))
+                elif mode == self.R2S:
+                    writer.write(cipher.encrypt(data))
+
                 await writer.drain()
 
-    def close_sock(future):
+    def close_transport(self, writer, future):
         writer.close()
-        r_writer.close()
-        logging.debug('relay stop')
-
-    logging.debug('start relay')
-
-    s2r = asyncio.ensure_future(sock2remote())
-    r2s = asyncio.ensure_future(remote2sock())
-
-    s2r.add_done_callback(close_sock)
-    r2s.add_done_callback(close_sock)
 
 
 if __name__ == '__main__':
@@ -100,8 +101,9 @@ if __name__ == '__main__':
     PORT = config['local_port']
     KEY = config['password']
 
+    server = Server()
     loop = asyncio.get_event_loop()
-    coro = asyncio.start_server(handle, (SERVER, '::'), SERVER_PORT)
+    coro = asyncio.start_server(server.handle, (SERVER, '::'), SERVER_PORT)
     server = loop.run_until_complete(coro)
 
     try:
