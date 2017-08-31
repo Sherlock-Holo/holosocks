@@ -64,6 +64,17 @@ class Server:
             try:
                 data = await reader.read(8192)
 
+                if not data:
+                    break
+
+                else:
+                    if mode == self.S2R:
+                        writer.write(cipher.decrypt(data))
+                    elif mode == self.R2S:
+                        writer.write(cipher.encrypt(data))
+
+                    await writer.drain()
+
             except OSError as e:
                 logging.error(e)
                 break
@@ -71,17 +82,6 @@ class Server:
             except ConnectionResetError as e:
                 logging.error(e)
                 break
-
-            if not data:
-                break
-
-            else:
-                if mode == self.S2R:
-                    writer.write(cipher.decrypt(data))
-                elif mode == self.R2S:
-                    writer.write(cipher.encrypt(data))
-
-                await writer.drain()
 
     def close_transport(self, writer, future):
         writer.close()
