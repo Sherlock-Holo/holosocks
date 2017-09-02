@@ -91,6 +91,17 @@ class Server:
                 writer.close()
                 return None
 
+            except ConnectionError as e:
+                logging.error(e)
+                writer.close()
+                return None
+
+            except TimeoutError as e:
+                logging.error(e)
+                writer.close()
+                return None
+
+
             if atyp != 4:
                 data = [
                     b'\x05\x00\x00\x01',
@@ -151,7 +162,11 @@ class Server:
                 logging.error(e)
                 break
 
-            except ConnectionResetError as e:
+            except ConnectionError as e:
+                logging.error(e)
+                break
+
+            except TimeoutError as e:
                 logging.error(e)
                 break
 
