@@ -64,10 +64,10 @@ class Server:
             self.relay(r_reader, writer, Encrypt, self.R2S))
 
         s2r.add_done_callback(
-            functools.partial(self.close_transport, writer))
+            functools.partial(self.close_transport, writer, r_writer))
 
         r2s.add_done_callback(
-            functools.partial(self.close_transport, r_writer))
+            functools.partial(self.close_transport, writer, r_writer))
 
     async def relay(self, reader, writer, cipher, mode):
         while True:
@@ -97,8 +97,9 @@ class Server:
                 logging.error(e)
                 break
 
-    def close_transport(self, writer, future):
+    def close_transport(self, writer, r_writer, future):
         writer.close()
+        r_writer.close()
 
 
 if __name__ == '__main__':
