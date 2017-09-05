@@ -189,6 +189,14 @@ if __name__ == '__main__':
     PORT = config['local_port']
     KEY = config['password']
 
+    try:
+        import uvloop
+        asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
+        logging.info('use uvloop event loop instead of asyncio event loop')
+    except ImportError:
+        logging.info('not found uvloop, use asyncio event lopp')
+        pass
+
     server = Server()
     loop = asyncio.get_event_loop()
     coro = asyncio.start_server(server.handle, LOCAL, PORT, loop=loop)
