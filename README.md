@@ -9,3 +9,4 @@ a simple proxy tool like Shadowsocks but it is not compatible with Shadowsocks
 * python >= 3.5
 * python-pycryptodomex (instead of pycrypto)
 * python-pycrypto (compatible)
+* uvloop (optional, for better performance)
