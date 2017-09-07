@@ -20,6 +20,11 @@ logging.basicConfig(
 class Server:
     S2R, R2S = range(2)
 
+    def __init__(self, server, server_port, key):
+        self.server = server
+        self.server_port = server_port
+        self.key = key
+
     async def handle(self, reader, writer):
         logging.debug(
             'connect from {}'.format(writer.get_extra_info('peername')))
@@ -84,7 +89,7 @@ class Server:
 
             try:
                 r_reader, r_writer = await asyncio.open_connection(
-                    SERVER, SERVER_PORT)
+                    self.server, self.server_port)
 
             except OSError as e:
                 logging.error(e)
@@ -119,9 +124,9 @@ class Server:
                 writer.write(b''.join(data))
                 await writer.drain()
 
-            Encrypt = aes_cfb(KEY)
+            Encrypt = aes_cfb(self.key)
             iv = Encrypt.iv
-            Decrypt = aes_cfb(KEY, iv)
+            Decrypt = aes_cfb(self.key, iv)
 
             r_writer.write(iv)
             r_writer.write(Encrypt.encrypt(target))
@@ -174,7 +179,7 @@ class Server:
         r_writer.close()
 
 
-if __name__ == '__main__':
+def main():
     #logging.info('start shadowsocks local')
     parser = argparse.ArgumentParser(description='shadowsocks local')
     parser.add_argument('-c', '--config', help='config file')
@@ -197,7 +202,7 @@ if __name__ == '__main__':
         logging.info('not found uvloop, use asyncio event lopp')
         pass
 
-    server = Server()
+    server = Server(SERVER, SERVER_PORT, KEY)
     loop = asyncio.get_event_loop()
     coro = asyncio.start_server(server.handle, LOCAL, PORT, loop=loop)
     server = loop.run_until_complete(coro)
@@ -211,3 +216,7 @@ if __name__ == '__main__':
     server.close()
     loop.run_until_complete(server.wait_closed())
     loop.close()
+
+
+if __name__ == '__main__':
+    main()

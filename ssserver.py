@@ -19,10 +19,13 @@ logging.basicConfig(
 class Server:
     S2R, R2S = range(2)
 
+    def __init__(self, key):
+        self.key = key
+
     async def handle(self, reader, writer):
         iv = await reader.read(16)
-        Encrypt = aes_cfb(KEY, iv)
-        Decrypt = aes_cfb(KEY, iv)
+        Encrypt = aes_cfb(self.key, iv)
+        Decrypt = aes_cfb(self.key, iv)
 
         _addr_len = await reader.read(1)
         _addr_len = Decrypt.decrypt(_addr_len)
@@ -102,7 +105,7 @@ class Server:
         r_writer.close()
 
 
-if __name__ == '__main__':
+def main():
     #logging.info('start shadowsocks server')
     parser = argparse.ArgumentParser(description='shadowsocks server')
     parser.add_argument('-c', '--config', help='config file')
@@ -124,7 +127,7 @@ if __name__ == '__main__':
         logging.info('not found uvloop, use asyncio event lopp')
         pass
 
-    server = Server()
+    server = Server(KEY)
     loop = asyncio.get_event_loop()
     coro = asyncio.start_server(server.handle, (SERVER, '::'), SERVER_PORT)
     server = loop.run_until_complete(coro)
@@ -138,3 +141,7 @@ if __name__ == '__main__':
     server.close()
     loop.run_until_complete(server.wait_closed())
     loop.close()
+
+
+if __name__ == '__main__':
+    main()
