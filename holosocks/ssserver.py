@@ -7,7 +7,10 @@ import json
 import logging
 import struct
 
-from .encrypt import aes_cfb
+try:
+    from .encrypt import aes_cfb
+except ModuleNotFoundError:  # develop mode
+    from encrypt import aes_cfb
 
 logging.basicConfig(
     level=logging.INFO,
