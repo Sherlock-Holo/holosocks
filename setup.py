@@ -21,7 +21,7 @@ setup(
     entry_points={
         'console_scripts': [
             'sslocal = holosocks.sslocal:main',
-            'ssserver = holosocks.sserver:main'
+            'ssserver = holosocks.ssserver:main'
         ]
     },
 
