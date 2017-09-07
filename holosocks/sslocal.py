@@ -184,7 +184,7 @@ class Server:
 
 def main():
     #logging.info('start shadowsocks local')
-    parser = argparse.ArgumentParser(description='shadowsocks local')
+    parser = argparse.ArgumentParser(description='holosocks local')
     parser.add_argument('-c', '--config', help='config file')
     args = parser.parse_args()
     if args.config:
