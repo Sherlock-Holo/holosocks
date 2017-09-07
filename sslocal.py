@@ -8,7 +8,7 @@ import logging
 import socket
 import struct
 
-from encrypt import aes_cfb
+from .encrypt import aes_cfb
 
 logging.basicConfig(
     level=logging.INFO,

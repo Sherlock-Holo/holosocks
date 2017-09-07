@@ -7,7 +7,7 @@ import json
 import logging
 import struct
 
-from encrypt import aes_cfb
+from .encrypt import aes_cfb
 
 logging.basicConfig(
     level=logging.INFO,
