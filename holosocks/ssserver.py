@@ -26,22 +26,38 @@ class Server:
         self.key = key
 
     async def handle(self, reader, writer):
-        iv = await reader.read(16)
-        Encrypt = aes_cfb(self.key, iv)
-        Decrypt = aes_cfb(self.key, iv)
+        try:
+            iv = await reader.read(16)
+            Encrypt = aes_cfb(self.key, iv)
+            Decrypt = aes_cfb(self.key, iv)
 
-        _addr_len = await reader.read(1)
-        _addr_len = Decrypt.decrypt(_addr_len)
-        addr_len = struct.unpack('>B', _addr_len)[0]
+            _addr_len = await reader.read(1)
+            _addr_len = Decrypt.decrypt(_addr_len)
+            addr_len = struct.unpack('>B', _addr_len)[0]
 
-        _addr = await reader.read(addr_len)
-        addr = Decrypt.decrypt(_addr)
+            _addr = await reader.read(addr_len)
+            addr = Decrypt.decrypt(_addr)
 
-        _port = await reader.read(2)
-        _port = Decrypt.decrypt(_port)
-        port = struct.unpack('>H', _port)[0]
+            _port = await reader.read(2)
+            _port = Decrypt.decrypt(_port)
+            port = struct.unpack('>H', _port)[0]
 
-        logging.debug('target {}:{}'.format(addr, port))
+            logging.debug('target {}:{}'.format(addr, port))
+
+        except OSError as e:
+            logging.error(e)
+            writer.close()
+            return None
+
+        except ConnectionError as e:
+            logging.error(e)
+            writer.close()
+            return None
+
+        except TimeoutError as e:
+            logging.error(e)
+            writer.close()
+            return None
 
         try:
             r_reader, r_writer = await asyncio.open_connection(addr, port)
