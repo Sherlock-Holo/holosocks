@@ -7,19 +7,17 @@ except ImportError:
     from Crypto.Hash import SHA256
     from Crypto.Random import get_random_bytes
 
-Cipher_Tag = {'aes-256-gcm': 16}
-Nonce_Len = 8    # fuck you 12 bytes
-
 
 class aes_cfb:
     def __init__(self, key, iv=None):
         '''Create a new AES-CFB cipher.
+
         iv: a 16 bytes length byte string, if not provided a random iv is used
         key: Your password like: passw0rd'''
 
         self.key = SHA256.new(key.encode()).digest()
         if not iv:
-            self.iv = get_random_bytes(AES.block_size)
+            self._iv = get_random_bytes(AES.block_size)
 
         else:
             if len(iv) != 16:
@@ -27,12 +25,12 @@ class aes_cfb:
                 raise ValueError(error_msg.format(len(iv)))
 
             elif type(iv) != bytes:
-                raise TypeError('iv should be bytes')
+                raise TypeError('iv should be byte')
 
             else:
-                self.iv = iv
+                self._iv = iv
 
-        self.cipher = AES.new(self.key, AES.MODE_CFB, self.iv)
+        self.cipher = AES.new(self.key, AES.MODE_CFB, self._iv)
 
     def encrypt(self, data):
         '''Return cipher'''
@@ -42,46 +40,9 @@ class aes_cfb:
         '''Return plain text'''
         return self.cipher.decrypt(data)
 
-
-class aes_gcm:
-    def __init__(self, key, salt=None, nonce=None):
-        '''Create a new AES-GCM cipher.
-
-        key: Your password like: passw0rd
-        salt: a 16 bytes length byte string, if not provided a random salt will be used
-        nonce: a 8 bytes length byte string, if not provided a random nonce will be used'''
-
-        self.raw_key = key.encode()
-        if not salt:
-            self.salt = get_random_bytes(16)
-        else:
-            if len(salt) != 16:
-                error_msg = 'salt length should be 16, not {}'
-                raise ValueError(error_msg.format(len(salt)))
-
-            else:
-                self.salt = salt
-        self.key = SHA256.new(self.raw_key + self.salt).digest()    # generate a 256 bytes key
-
-        if not nonce:
-            self.nonce = get_random_bytes(Nonce_Len)
-        else:
-            if len(nonce) != Nonce_Len:
-                error_msg = 'nonce length should be 16, not {}'
-                raise ValueError(error_msg.format(len(nonce)))
-
-            else:
-                self.nonce = nonce
-        self.cipher = AES.new(self.key, AES.MODE_GCM, self.nonce)
-
-    def encrypt(self, data):
-        '''Return (cpiher, MAC)'''
-        return self.cipher.encrypt(data), self.cipher.digest()
-
-    def decrypt(self, data, mac):
-        '''Verify MAC, if matching, will return plain text or raise ValueError'''
-        plain = self.cipher.decrypt_and_verify(data, mac)
-        return plain
+    @property
+    def iv(self):
+        return self._iv
 
 
 if __name__ == '__main__':
@@ -92,12 +53,3 @@ if __name__ == '__main__':
     cipher = en.encrypt(b'holo')
     de = aes_cfb('test', iv)
     print(de.decrypt(cipher))
-
-    # AES-GCM
-    print('AES-256-GCM')
-    gen = aes_gcm('test')
-    salt = gen.salt
-    nonce = gen.nonce
-    gcipher = gen.encrypt(b'holo')
-    gde = aes_gcm('test', salt, nonce)
-    print(gde.decrypt(*gcipher))
